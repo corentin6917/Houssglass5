@@ -1,0 +1,76 @@
+name: hourglass
+description: A Flutter app for capturing daily victories and converting them into visual grains.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Supabase
+  supabase_flutter: ^2.5.0
+
+  # Routing
+  go_router: ^14.0.2
+
+  # Code generation
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.8.1
+
+  # Media
+  image_picker: ^1.0.7
+  camera: ^0.10.5+9
+  cached_network_image: ^3.3.1
+  image: ^4.1.7
+
+  # UI
+  flutter_animate: ^4.5.0
+  intl: ^0.19.0
+
+  # Utils
+  uuid: ^4.3.3
+  shared_preferences: ^2.2.2
+  flutter_dotenv: ^5.1.0
+
+  # Icons
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+  # Code generation
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.3.11
+  freezed: ^2.4.7
+  json_serializable: ^6.7.1
+
+  # Testing
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
+    - assets/images/
+    - assets/animations/
+
+  # fonts:
+  #   - family: Poppins
+  #     fonts:
+  #       - asset: assets/fonts/Poppins-Regular.ttf
+  #       - asset: assets/fonts/Poppins-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Poppins-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Poppins-Bold.ttf
+  #         weight: 700

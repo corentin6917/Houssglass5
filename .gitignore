@@ -1,0 +1,93 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.Python
+backend/build/
+backend/develop-eggs/
+backend/dist/
+backend/downloads/
+backend/eggs/
+backend/.eggs/
+backend/lib64/
+backend/parts/
+backend/sdist/
+backend/var/
+backend/wheels/
+backend/*.egg-info/
+backend/.installed.cfg
+backend/*.egg
+
+# ML Service
+services/ml-service/.venv/
+services/ml-service/__pycache__/
+services/**/.venv/
+services/**/__pycache__/
+
+# Flutter/Dart
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/.pub-cache/
+app/.pub/
+app/ios/Flutter/flutter_export_environment.sh
+app/ios/Flutter/App.framework
+app/ios/Flutter/Flutter.framework
+app/ios/Flutter/Generated.xcconfig
+app/ios/Pods/
+app/ios/.symlinks/
+app/android/.gradle
+app/android/captures/
+app/android/local.properties
+app/android/app/debug
+app/android/app/profile
+app/android/app/release
+app/.idea/
+app/*.iml
+
+# Web
+app/web/.dart_tool/
+
+# Environment files (keep templates only)
+backend/.env
+app/.env
+services/**/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Models (too large for Git)
+models/**/*.h5
+models/**/*.pkl
+models/**/*.onnx
+models/**/*.pt
+models/**/*.pth
+
+# Logs
+*.log
+logs/
+
+# Cache
+*.cache
+.cache/
+
+# Temporary files
+*.tmp
+temp/
+tmp/

@@ -1,0 +1,414 @@
+version: '3.8'
+
+services:
+  # ======================
+  # API Gateway
+  # ======================
+  api-gateway:
+    image: kong:3.4
+    ports:
+      - "8000:8000"  # HTTP
+      - "8443:8443"  # HTTPS
+      - "8001:8001"  # Admin API
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_USER: hourglass
+      KONG_PG_PASSWORD: hourglass_pass
+      KONG_PG_DATABASE: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    depends_on:
+      - postgres
+    networks:
+      - hourglass-network
+
+  # ======================
+  # Microservices
+  # ======================
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8101:8000"
+    environment:
+      SERVICE_NAME: user-service
+      DATABASE_URL: postgresql://hourglass:hourglass_pass@postgres:5432/users
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key}
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  goals-service:
+    build:
+      context: ./services/goals-service
+      dockerfile: Dockerfile
+    ports:
+      - "8102:8000"
+    environment:
+      SERVICE_NAME: goals-service
+      DATABASE_URL: postgresql://hourglass:hourglass_pass@postgres:5432/goals
+      REDIS_URL: redis://redis:6379/1
+      KAFKA_BROKERS: kafka:9092
+      ML_SERVICE_URL: http://ml-service:8000
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - ml-service
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  social-service:
+    build:
+      context: ./services/social-service
+      dockerfile: Dockerfile
+    ports:
+      - "8103:8000"
+    environment:
+      SERVICE_NAME: social-service
+      DATABASE_URL: postgresql://hourglass:hourglass_pass@postgres:5432/social
+      REDIS_URL: redis://redis:6379/2
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  ml-service:
+    build:
+      context: ./services/ml-service
+      dockerfile: Dockerfile
+    ports:
+      - "8104:8000"
+    environment:
+      SERVICE_NAME: ml-service
+      MODEL_PATH: /models
+      TENSORFLOW_SERVING_URL: http://tensorflow-serving:8501
+      DATABASE_URL: postgresql://hourglass:hourglass_pass@postgres:5432/ml_data
+      REDIS_URL: redis://redis:6379/3
+    volumes:
+      - ./models:/models
+      - ml-cache:/cache
+    depends_on:
+      - tensorflow-serving
+      - postgres
+      - redis
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    ports:
+      - "8105:8000"
+    environment:
+      SERVICE_NAME: analytics-service
+      TIMESCALEDB_URL: postgresql://hourglass:hourglass_pass@timescaledb:5432/analytics
+      CLICKHOUSE_URL: http://clickhouse:8123
+      REDIS_URL: redis://redis:6379/4
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      - timescaledb
+      - clickhouse
+      - redis
+      - kafka
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    ports:
+      - "8106:8000"
+    environment:
+      SERVICE_NAME: notification-service
+      REDIS_URL: redis://redis:6379/5
+      KAFKA_BROKERS: kafka:9092
+      FIREBASE_CONFIG_PATH: /config/firebase.json
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+    volumes:
+      - ./config/firebase.json:/config/firebase.json
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  # ======================
+  # Databases
+  # ======================
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: hourglass
+      POSTGRES_PASSWORD: hourglass_pass
+      POSTGRES_MULTIPLE_DATABASES: users,goals,social,ml_data,kong
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: hourglass
+      POSTGRES_PASSWORD: hourglass_pass
+      POSTGRES_DB: analytics
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: events
+      CLICKHOUSE_USER: hourglass
+      CLICKHOUSE_PASSWORD: hourglass_pass
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  # ======================
+  # Message Queue
+  # ======================
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  # ======================
+  # Search & Indexing
+  # ======================
+
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  # ======================
+  # ML Infrastructure
+  # ======================
+
+  tensorflow-serving:
+    image: tensorflow/serving:latest
+    ports:
+      - "8501:8501"  # REST API
+      - "8500:8500"  # gRPC
+    environment:
+      MODEL_NAME: hourglass_models
+    volumes:
+      - ./models:/models/hourglass_models
+    command:
+      - "--model_base_path=/models/hourglass_models"
+      - "--rest_api_port=8501"
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  # ======================
+  # Monitoring & Observability
+  # ======================
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: hourglass_admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"  # Web UI
+      - "14268:14268"
+      - "14250:14250"
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  # ======================
+  # Async Task Queue
+  # ======================
+
+  celery-worker:
+    build:
+      context: ./services/celery-worker
+      dockerfile: Dockerfile
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/6
+      CELERY_RESULT_BACKEND: redis://redis:6379/7
+      DATABASE_URL: postgresql://hourglass:hourglass_pass@postgres:5432/users
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+  celery-beat:
+    build:
+      context: ./services/celery-worker
+      dockerfile: Dockerfile
+    command: celery -A app.celery beat --loglevel=info
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/6
+      CELERY_RESULT_BACKEND: redis://redis:6379/7
+    depends_on:
+      - redis
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+  flower:
+    image: mher/flower:latest
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/6
+      CELERY_RESULT_BACKEND: redis://redis:6379/7
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - hourglass-network
+    restart: unless-stopped
+
+networks:
+  hourglass-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  timescale_data:
+  clickhouse_data:
+  elastic_data:
+  prometheus_data:
+  grafana_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+  ml-cache:
